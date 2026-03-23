@@ -127,7 +127,7 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NAAAAAAAIAsaFu36H6AAAc+YUlSQnhqT1KAAAaXp8FFdNAAADRiE
 
 >git config --global alias.lg "log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit"
 
-微商吗的命令起个别名,`git lg`
+命令起个别名,`git lg`
 
 ### 比较版本之间差异
 > `git diff`
@@ -184,12 +184,11 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NAAAAAAAIAsaFu36H6AAAc+YUlSQnhqT1KAAAaXp8FFdNAAADRiE
 		- **命令**：`git reset --soft HEAD~1`
 		- **行为**：
 		    - **版本库**：HEAD 指针回退一步。
-		    - **暂存区**：不变（保留了你刚才提交的所有内容）。
+		    - **暂存区**：不变（保留提交内容）。
 		    - **工作区**：不变。
 		- **场景**：
-		    - **我刚才提交早了！**：你提交完发现少加了一个文件，或者 Commit Message 写错了。
-		    - **我想合并提交**：你想把最近的两次提交合并成一次。
-		- **解释**：就像把寄出去的信封拆开，信纸（代码）还在桌上，而且已经折叠整齐（Staged），你只需要补充几句，就可以重新装信封（Commit）。
+		    - **我刚才提交早了！**：提交完发现少文件，或者 Commit Message 写错了。
+		    - **我想合并提交**：把最近的两次提交合并成一次。
 	- Mixed 模式（中度后悔 - 默认）
 		- **命令**：`git reset --mixed HEAD~1` (或简写为 `git reset HEAD~1`)
 		- **行为**：
@@ -197,8 +196,7 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NAAAAAAAIAsaFu36H6AAAc+YUlSQnhqT1KAAAaXp8FFdNAAADRiE
 		    - **暂存区**：**被重置**（回退到上一版本，即清空了暂存状态）。
 		    - **工作区**：**不变**（保留了修改，但变为 Unstaged 状态）。
 		- **场景**：
-		    - **我 add 了错误的文件**：你把测试数据不小心 add 进去了。你想撤销提交，并且重新挑选要 add 的文件。
-		- **解析**：就像把信封拆开，并且把信纸**揉平铺在桌上**（工作区）。你需要重新折叠（add）才能再次发送。这是 Git 的默认行为，因为它最安全——它不会修改你正在编辑的文件。
+		    - **add 了错误的文件**：测试数据不小心 add 进去了。想撤销提交并且重新add 
 	- Hard 模式（重度后悔 - 危险）
 		- **命令**：`git reset --hard HEAD~1`
 		- **行为**：
@@ -207,10 +205,107 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NAAAAAAAIAsaFu36H6AAAc+YUlSQnhqT1KAAAaXp8FFdNAAADRiE
 		    - **工作区**：**被强制重置**（所有未提交的修改瞬间消失，恢复到上一个版本的模样）。
 		- **场景**：
 		    - **我彻底搞砸了**：代码写得一团糟，想完全放弃最近的尝试，回到过去。
-		- **解析：**焚烧**。把刚才的信封连同里面的信纸，直接扔进碎纸机。桌面上干干净净，仿佛什么都没发生过。
 - **Revert**：针对**提交 (Commit)**。通过新增一个“反向提交”来抵消错误。适用于公共分支的修正。不删除历史，而是创建一个**新的提交**
 	- `git revert <Commit-B-Hash>`Git 会自动生成一个新的提交 `D`。历史变成了 `A -> B -> C -> D`。 其中 `D` 的内容 = `B` 的逆运算
 - **Restore**：针对**文件 (File)**。精准丢弃工作区或暂存区的修改，不涉及历史指针的移动。
 	- `git restore config.js` 撤销工作区修改
 	- `git restore --staged password.txt撤销暂存区修改
 > Git 实际上很难真正删除东西。我们可以使用 git reflog（引用日志）来查找所有 HEAD 变动的轨迹
+
+## Day4
+### 内容寻址的底层定义
+git储存快照`snapshot`的方式 `内容寻址` 。对于git来说，文件名=元数据，文件内容=唯一的hash值，通过后者来检索内容。每个k-v 对应 hash: 压缩后的文件内容
+> **只要内容完全相同，无论文件名叫什么，在 Git 中都是同一个对象**
+
+### 对象储存机制
+git储存的是快照，每个快照对应一个“对象“实例（我猜），本质是基于内容寻址的文件系统
+对象包括4个内容：
+- **Blob Object** 最基本的存储单元，存储文件的**内容**，不包括文件名/路径/权限等
+	- 使用zlib压缩算法
+	- 内容相同即hash相同
+	- 一旦创建不可变
+- **Tree Object** 类似目录，记录Blob和Tree的组织结构，存储文件名和对象hash值的映射
+	-  **存储目录快照**：记录某个时刻的目录结构
+	- **包含元数据**：文件名、文件类型、权限、哈希引用
+	- **递归结构**：Tree 可以包含其他 Tree（**Merkle Tree（默克尔树）** 结构，底层变动影响顶层Tree的hash变化）
+	- **内容寻址**：Tree 的哈希由其包含的所有条目决定
+```
+# 根 Tree 对象
+tree: d1b2c3...
+├── blob: a1b2c3... "README.md" (文件内容)
+├── tree: e1f2g3... "src/" (目录)
+│ ├── blob: x1y2z3... "main.py" (文件内容)
+│ └── blob: m1n2o3... "utils.py" (文件内容)
+└── blob: p1q2r3... "config.json" (文件内容)
+```
+
+- **Commit Object** 将“目录树”（Tree）与“时间节点”和“作者信息”绑定在一起，形成具有完整上下文的**版本快照** 。用于定格快照，记录历史
+	- **Top-level Tree**：指向项目根目录的 Tree 对象哈希。
+	- **Parent**：指向父提交的哈希（第一次提交没有父节点，合并提交有多个父节点）。
+	-  **Author/Committer**：完整记录了作者 (Author)、提交者 (Committer)、时间戳 (Timestamp) 以及提交信息 (Message)。
+	-  **Message**：提交说明。
+```
+tree d1b2c3... (指向当前版本的顶层目录)
+parent a1b2c3... (指向父提交，即上一个版本)
+author Gitconomy User <user@gitconomy.org> 1705496400 +0800
+committer Gitconomy User <user@gitconomy.org> 1705496400 +0800
+feat: add README and source code
+```
+- **Tag Object** 本质是 Commit 的唯一标记。是一个**真正的对象**，存储在 `.git/objects` 。包含标签名、打标签的人、日期、标签信息，并包含一个指针指向目标 Commit。
+    - **引用**：`.git/refs/tags/` 下的文件指向这个 Tag 对象，而 Tag 对象再指向 Commit。
+    - **创建方式**：`git tag -a v1.0 -m "Release"`
+```
+object 8f3a1b2... (指向的目标 Commit 哈希)
+type commit (目标对象的类型)
+tag v1.0 (标签名称)
+tagger Gitconomy User <user@gitconomy.org> 1705496400 +0800
+Release version 1.0 (标签说明信息)
+```
+
+### 自动去重和增量打包
+- **对象复用** 
+	- 不同文件名相同内容：只有一个Blob对象，Tree 对象中指向同一个 Blob 哈希值。仅增加索引开支，不增加存储开支
+	- 文件修改：不修改原Blob，创建新Blob
+- **对象压缩和打包** `.git/objects`有两种文件形态
+	- **松散存储 (Loose Objects)** 执行 `git add` 或 `git commit` 时， zlib 算法将每个对象单独压缩，并以哈希值的前两位为目录名，后 38 位为文件名，存储在 `.git/objects/` 
+	- **打包存储 (Packfiles)** 松散对象越来越多导致磁盘碎片化。定期（或在执行 `git gc` 时）自动触发回收机制，将零散文件打包成**包文件**
+		-  `git gc`（垃圾回收）or 推送到远程仓库时，Git 会启用**打包 (Packing)** 机制分析这些对象，对相似的内容（如同一个文件的 v1 和 v2 版本），使用 **Delta Compression (增量压缩)** 技术：
+			- 存储最新版本的完整内容。
+			- 存储旧版本相对于新版本的“差异”（Delta）。
+			- 所有数据会被塞进一个 `.pack` 文件，并配对一个 `.idx` 索引文件以加快查找
+
+### Merkle Chain Effect
+Git 的数据结构是一个 **DAG (有向无环图)**
+1. 修改了文件 -> Blob 哈希值变化
+2. Blob 哈希变化 -> 包含它的 Tree 对象的哈希值变化
+3. Tree 哈希变化 -> 根 Tree 的哈希变化
+4. 根 Tree 哈希变化 -> Commit 对象指向的 Tree 变化，生成一个新的 Commit 哈希。
+
+### 数据安全
+- **防损坏**：磁盘故障导致的一位比特翻转导致hash变化不匹配
+- **防篡改**：没有人能悄悄修改历史记录而不改变 Commit ID
+
+```
+# 1. 查看最新的 Commit 的哈希值 (HEAD)
+git log -1 --pretty=format:%H
+ca82a6d... (假设的哈希值)
+
+# 2. 查看这个 Commit 对象里有什么
+# -p 参数表示 pretty-print (漂亮打印)
+git cat-file -p ca82a6d
+tree 9c4d23...
+parent 8f3a1b...
+author Gitconomy User...
+committer Gitconomy User...
+
+	feat: add hello file
+
+# 3. 顺藤摸瓜，查看那个 Tree 对象
+git cat-file -p 9c4d23
+3100644 blob e69de29bb2d1d6434b8b29ae775ad8c2e48c5391    hello.txt
+
+# 4. 最后，查看那个 Blob 对象 (文件的真实内容)
+git cat-file -p e69de29
+Hello Git World!
+
+```
